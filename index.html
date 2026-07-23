@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>اختبار بايثون المتقدم</title>
+    <!-- استدعاء Tailwind CSS للتصميم -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- استدعاء FontAwesome للأيقونات -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- استدعاء Pyodide لتشغيل بايثون -->
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; }
+        .hidden { display: none !important; }
+        .modal { background-color: rgba(0,0,0,0.5); }
+        /* تنسيق مخصص للكود البرمجي */
+        pre.code-block { direction: ltr; text-align: left; background: #1e1e1e; color: #d4d4d4; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; font-family: 'Courier New', Courier, monospace; font-size: 1.1rem;}
+        .keyword { color: #569cd6; }
+        .string { color: #ce9178; }
+        .comment { color: #6a9955; }
+        .function { color: #dcdcaa; }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <!-- شاشة تسجيل الدخول -->
+    <div id="login-screen" class="min-h-screen flex items-center justify-center bg-gray-900">
+        <div class="bg-white p-8 rounded-lg shadow-2xl w-96 max-w-full">
+            <h2 class="text-2xl font-bold mb-6 text-center text-blue-600">تسجيل الدخول للاختبار</h2>
+            <div class="mb-4">
+                <label class="block text-gray-700 mb-2">اسم الممتحن الثلاثي:</label>
+                <input type="text" id="student-name" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:border-blue-500" placeholder="أدخل اسمك هنا">
+            </div>
+            <div class="mb-6">
+                <label class="block text-gray-700 mb-2">كلمة المرور:</label>
+                <input type="password" id="exam-password" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:border-blue-500" placeholder="أدخل كلمة المرور">
+            </div>
+            <button onclick="startLogin()" class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition">دخول</button>
+            <p id="login-error" class="text-red-500 text-sm mt-3 text-center hidden">كلمة المرور غير صحيحة أو يرجى إدخال الاسم.</p>
+        </div>
+    </div>
+
+    <!-- شاشة الانتظار (محاكاة لاكتمال العدد) -->
+    <div id="waiting-screen" class="hidden min-h-screen flex flex-col items-center justify-center bg-gray-900 text-white">
+        <i class="fa-solid fa-spinner fa-spin text-6xl text-blue-500 mb-6"></i>
+        <h2 class="text-3xl font-bold mb-4">غرفة الانتظار</h2>
+        <p class="text-xl text-gray-300 mb-2">جاري انتظار انضمام باقي الطلاب لبدء الامتحان...</p>
+        <p class="text-lg text-yellow-400">العدد الحالي: <span id="student-count">1</span> / 50</p>
+    </div>
+
+    <!-- شاشة الاختبار -->
+    <div id="exam-screen" class="hidden min-h-screen flex flex-col">
+        <!-- الشريط العلوي -->
+        <div class="bg-white shadow-md p-4 flex justify-between items-center sticky top-0 z-10">
+            <div class="flex items-center gap-4">
+                <button onclick="prevQuestion()" id="btn-prev" class="bg-gray-200 text-gray-700 px-4 py-2 rounded disabled:opacity-50 hover:bg-gray-300"><i class="fa-solid fa-arrow-right"></i> السابق</button>
+                <button onclick="nextQuestion()" id="btn-next" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">التالي <i class="fa-solid fa-arrow-left"></i></button>
+            </div>
+            <div class="text-xl font-bold text-gray-700" id="question-counter">السؤال 1 / 50</div>
+            <div class="flex items-center gap-4">
+                <div class="bg-yellow-100 text-yellow-800 px-4 py-2 rounded font-bold" id="timer-display">50:00</div>
+                <button onclick="openEditor()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"><i class="fa-solid fa-code"></i> محرر الأكواد</button>
+                <button onclick="confirmSubmit()" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"><i class="fa-solid fa-check-double"></i> إنهاء</button>
+            </div>
+        </div>
+
+        <!-- حاوية الأسئلة -->
+        <div class="flex-grow flex items-center justify-center p-6">
+            <div class="bg-white p-8 rounded-lg shadow-lg w-full max-w-6xl flex flex-col lg:flex-row gap-8">
+                
+                <!-- قسم السؤال والخيارات -->
+                <div class="flex-1">
+                    <h3 class="text-2xl font-semibold mb-6 text-gray-800" id="q-text">نص السؤال يظهر هنا</h3>
+                    <div id="options-container" class="space-y-4">
+                        <!-- الخيارات تُضاف هنا -->
+                    </div>
+                </div>
+
+                <!-- قسم الكود الجانبي -->
+                <div id="code-section" class="flex-1 hidden">
+                    <div class="bg-gray-800 rounded-lg p-1 h-full shadow-inner">
+                        <div class="bg-gray-700 text-gray-300 px-4 py-2 rounded-t-lg text-sm font-mono flex items-center gap-2">
+                            <i class="fa-brands fa-python text-blue-400"></i> مقتطف الكود
+                        </div>
+                        <pre class="code-block" id="q-code-block"></pre>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- محرر أكواد بايثون -->
+    <div id="editor-modal" class="hidden fixed inset-0 modal flex items-center justify-center z-50 p-4">
+        <div class="bg-white w-full max-w-4xl rounded-lg shadow-2xl flex flex-col h-3/4">
+            <div class="p-4 border-b flex justify-between items-center bg-gray-100 rounded-t-lg">
+                <h3 class="font-bold text-lg text-gray-700"><i class="fa-brands fa-python text-blue-500"></i> مسودة بايثون للتجارب</h3>
+                <button onclick="closeEditor()" class="text-red-500 hover:text-red-700 text-xl"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-4 flex-grow flex flex-col gap-4">
+                <textarea id="python-code" class="w-full h-1/2 p-4 border rounded font-mono text-left bg-gray-900 text-green-400 focus:outline-none" dir="ltr" placeholder="# يمكنك تجربة أكوادك هنا..."></textarea>
+                <button onclick="runCode()" class="bg-green-600 text-white py-2 rounded hover:bg-green-700 font-bold"><i class="fa-solid fa-play"></i> تشغيل</button>
+                <pre id="python-output" class="w-full h-1/3 p-4 border rounded font-mono text-left bg-gray-100 overflow-y-auto" dir="ltr">المخرجات...</pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- شاشة النهاية -->
+    <div id="finish-modal" class="hidden fixed inset-0 modal flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-lg shadow-2xl w-96 text-center">
+            <h2 class="text-2xl font-bold mb-4 text-green-600">تم إرسال إجاباتك بنجاح!</h2>
+            <p class="mb-6 text-gray-700">تم حفظ درجتك في ملف الإدارة المركزي بنجاح.</p>
+        </div>
+    </div>
+
+    <script>
+        function formatPythonCode(code) {
+            return code
+                .replace(/("""[\s\S]*?"""|'''[\s\S]*?'''|#.*)/g, '<span class="comment">$1</span>')
+                .replace(/(["'])(?:(?=(\\?))\2.)*?\1/g, '<span class="string">$&</span>')
+                .replace(/\b(print|type|help|len|int|float|str|complex|dict|list|set|tuple)\b/g, '<span class="function">$1</span>')
+                .replace(/\b(True|False|None|and|or|not|in|is)\b/g, '<span class="keyword">$1</span>');
+        }
+
+        const questions = [
+            { q: "ما هي الطريقة الصحيحة لكتابة اسم متغير مكون من كلمتين بنظام snake_case؟", options: ["myName", "my_name", "MyName", "my-name"], ans: 1 },
+            { q: "ما هي وظيفة الدالة type() في بايثون؟", options: ["طباعة نص", "معرفة نوع البيانات للمتغير", "تحويل النص إلى رقم", "إنهاء البرنامج"], ans: 1 },
+            { q: "ما هو مخرج هذا الكود؟", code: "print(type(-100.9595))", options: ["<class 'int'>", "<class 'float'>", "<class 'str'>", "<class 'complex'>"], ans: 1 },
+            { q: "ما نوع البيانات الناتج من التعبير (2 == 2)؟", options: ["int", "str", "bool", "list"], ans: 2 },
+            { q: "أي من أسماء المتغيرات التالية يعتبر صالحاً في بايثون؟", options: ["1name", "main-color", "main_color", "@name"], ans: 2 },
+            { q: "ما هي عملية تحويل الكود المصدري (Source Code) أثناء وقت التشغيل (Run-Time)؟", options: ["Compilation", "Interpreted", "Translation", "Execution"], ans: 1 },
+            { q: "ما هو مخرج هذا الكود الخاص بالتعيين المتعدد؟", code: "a, b, c = 1, 2, 3\nprint(b)", options: ["1", "2", "3", "خطأ برمجي"], ans: 1 },
+            { q: "أي رمز هروب (Escape Sequence) يُستخدم لعمل مسافة أفقية (Tab)؟", options: ["\\n", "\\r", "\\t", "\\b"], ans: 2 },
+            { q: "ماذا سيطبع الكود التالي؟", code: "print(\"123456\\rAbcde\")", options: ["123456Abcde", "Abcde6", "Abcde123456", "123456\nAbcde"], ans: 1 },
+            { q: "أي من الطرق التالية تمثل تعليقاً متعدد الأسطر بشكل صحيح (نظرياً في بايثون)؟", options: ["// تعليق //", "/* تعليق */", "استخدام علامات التنصيص الثلاثية \"\"\"", "استخدام ###"], ans: 2 },
+            { q: "ما نتيجة دمج سلسلة نصية مع رقم بهذا الشكل؟", code: "print(\"Hello \" + 1)", options: ["Hello 1", "Hello 1.0", "خطأ من نوع TypeError", "Hello"], ans: 2 },
+            { q: "في عملية الـ Slicing للسلسلة 'I Love Python' ما نتيجة الكود؟", code: "myString = \"I Love Python\"\nprint(myString[3:5])", options: ["Lov", "ov", "ve", "Love"], ans: 1 },
+            { q: "إذا لم نحدد نقطة البداية في الـ Slicing، من أين يبدأ بايثون؟", code: "print(myString[:10])", options: ["من الفهرس 1", "من الفهرس 0", "يحدث خطأ", "من النهاية"], ans: 1 },
+            { q: "ما وظيفة الدالة rstrip()؟", options: ["إزالة المسافات من الجانبين", "إزالة المسافات من اليسار فقط", "إزالة المسافات من اليمين فقط", "حذف الكلمة"], ans: 2 },
+            { q: "ما مخرج الدالة zfill في هذا الكود؟", code: "c = \"11\"\nprint(c.zfill(4))", options: ["1100", "0011", "0110", "11"], ans: 1 },
+            { q: "ما نتيجة تقسيم النص التالي؟", code: "a = \"I Love Python\"\nprint(a.split())", options: ["['I', 'Love', 'Python']", "('I', 'Love', 'Python')", "I, Love, Python", "['ILovePython']"], ans: 0 },
+            { q: "ماذا ترجع الدالة find() إذا لم تجد الكلمة المطلوبة داخل النص؟", options: ["ترجع خطأ Error", "ترجع 0", "ترجع -1", "ترجع False"], ans: 2 },
+            { q: "كيف نجعل الكلمة في المنتصف ومحاطة برمز @؟", code: "e = \"Shahd\"\nprint(e.center(15, \"@\"))", options: ["@@@@Shahd@@@@", "@@@@@Shahd@@@@@", "Shahd@@@@@@@@@", "@@@@@@@@@Shahd"], ans: 1 },
+            { q: "ما نتيجة الدالة expandtabs() في هذا الكود؟", code: "g = \"A\\tB\"\nprint(g.expandtabs(2))", options: ["A B", "A  B", "AB  ", "  AB"], ans: 1 },
+            { q: "أي الدالتين تُستخدم للتحقق مما إذا كان النص يحتوي على حروف فقط؟", options: ["isalnum()", "isidentifier()", "isalpha()", "istitle()"], ans: 2 },
+            { q: "في طريقة الـ Formatting القديمة، ما الرمز المستخدم للتعبير عن الأرقام الصحيحة (Integer)؟", options: ["%s", "%f", "%i", "%d"], ans: 3 },
+            { q: "كيف نستقطع جزء من النص باستخدام format؟", code: "msg = \"Hello Peoples\"\nprint(\"{:.5s}\".format(msg))", options: ["Hello", " Hello", "Peopl", "ples"], ans: 0 },
+            { q: "كيف يمكن تنسيق الأموال بوضع فواصل بين الآلاف في الإصدارات الحديثة؟", options: ["{:_d}", "{:,d}", "كلاهما صحيح", "لا يمكن ذلك"], ans: 2 },
+            { q: "ما نوع البيانات لـ myComplexNumber = 5+6j؟", options: ["float", "int", "complex", "tuple"], ans: 2 },
+            { q: "ما نتيجة عملية القسمة المعتادة في بايثون؟", code: "print(100 / 20)", options: ["5", "5.0", "0", "0.5"], ans: 1 },
+            { q: "ما نتيجة عملية باقي القسمة (Modulus) في الكود؟", code: "print(22 % 5)", options: ["4", "2", "0", "4.4"], ans: 1 },
+            { q: "أي من الخصائص التالية لا تنطبق على القوائم (Lists)؟", options: ["مرتبة (Ordered)", "قابلة للتعديل (Mutable)", "العناصر بداخلها فريدة (Unique)", "تقبل أنواع بيانات مختلفة"], ans: 2 },
+            { q: "كيف نستبدل أول ثلاثة عناصر في القائمة بعنصر واحد \"A\"؟", code: "myList = [1, 2, 3, 4]\nmyList[0:3] = [\"A\"]", options: ["['A', 1, 2, 3, 4]", "['A', 4]", "['A', 'A', 'A', 4]", "خطأ برمجي"], ans: 1 },
+            { q: "ما هو ترتيب العناصر بعد تنفيذ الدالة sort بهذا الشكل؟", code: "y = [100, 10, 50]\ny.sort(reverse=True)", options: ["[10, 50, 100]", "[100, 50, 10]", "[50, 10, 100]", "لن تتغير"], ans: 1 },
+            { q: "ما الفرق الأساسي بين Tuples و Lists؟", options: ["Tuple قابلة للتعديل، القائمة لا", "القائمة قابلة للتعديل، Tuple لا (Immutable)", "لا يوجد فرق", "Tuple للنصوص فقط"], ans: 1 },
+            { q: "كيف نقوم بإنشاء Tuple يتكون من عنصر واحد فقط؟", options: ["myTuple = (1)", "myTuple = [1]", "myTuple = (1,)", "myTuple = {1}"], ans: 2 },
+            { q: "ماذا يفعل معامل الضرب (*) عند استخدامه مع الـ Tuple؟", code: "myTuple = (\"A\", \"B\")\nprint(myTuple * 3)", options: ["يضرب نصوص Tuple في 3", "يكرر عناصر Tuple ثلاث مرات", "يحدث خطأ", "ينشئ Tuple فارغ"], ans: 1 },
+            { q: "أي من أنواع البيانات التالية لا يمكن إضافته داخل الـ Set؟", options: ["Numbers", "Strings", "Tuples", "Lists"], ans: 3 },
+            { q: "ما نتيجة الكود التالي الخاص بالمجموعات (Sets)؟", code: "mySet = {1, 2, \"A\", \"A\", 1}\nprint(mySet)", options: ["{1, 2, 'A', 'A', 1}", "{1, 2, 'A'}", "يحدث خطأ", "['A', 1, 2]"], ans: 1 },
+            { q: "ما الدالة المستخدمة لإزالة عنصر من المجموعة دون إظهار خطأ إذا لم يكن موجوداً؟", options: ["remove()", "pop()", "discard()", "clear()"], ans: 2 },
+            { q: "ما وظيفة الدالة union() أو الرمز (|) في المجموعات؟", options: ["جلب التقاطع", "دمج المجموعتين", "حذف المجموعتين", "طرح المجموعتين"], ans: 1 },
+            { q: "ماذا تفعل دالة update() في القواميس (Dictionaries)؟", options: ["تمسح القاموس", "تضيف عنصراً جديداً أو تحدث قيمة عنصر موجود", "تحدث اسم القاموس", "تجلب القيم فقط"], ans: 1 },
+            { q: "كيف نصل إلى قيمة \"Html\" في هذا القاموس المتداخل؟", code: "langs = {\"One\": {\"name\": \"Html\"}}", options: ["langs['One']['name']", "langs['name']['One']", "langs.get('Html')", "langs[0][0]"], ans: 0 },
+            { q: "الدالة التي ترجع جميع مفاتيح القاموس هي:", options: ["values()", "items()", "keys()", "get()"], ans: 2 },
+            { q: "إذا استخدمنا دالة setdefault(\"age\", 36) وكان المفتاح \"age\" غير موجود، ماذا يحدث؟", options: ["تتجاهل الأمر", "تحدث خطأ", "تضيف المفتاح \"age\" بالقيمة 36", "تحذف القاموس"], ans: 2 },
+            { q: "في التنسيق الحديث بالـ f-string، كيف تتم طباعة المتغيرات؟", code: "n = \"Ali\"\nprint(f\"My Name is {n}\")", options: ["يتم تجاهل {} وتطبع كنص", "يطبع: My Name is Ali", "يطبع: My Name is {n}", "يحدث خطأ SyntaxError"], ans: 1 },
+            { q: "ما هو مخرج الكود التالي لمعالجة المجموعات؟", code: "e = {1, 2, 3}\nf = {2, 3, 4}\nprint(e.intersection(f))", options: ["{1, 2, 3, 4}", "{2, 3}", "{1}", "{4}"], ans: 1 },
+            { q: "ما نتيجة دالة symmetric_difference (الاختلاف التناظري) i ^ j؟", code: "i = {1, 2, 3}\nj = {2, 3, 4}", options: ["{2, 3}", "{1, 4}", "{1, 2, 3, 4}", "خطأ"], ans: 1 },
+            { q: "ما هي نتيجة issuperset في هذا الكود؟", code: "a = {1, 2, 3, 4}\nb = {1, 2}\nprint(a.issuperset(b))", options: ["True", "False", "None", "Error"], ans: 0 },
+            { q: "دالة popitem() في القاموس، أي عنصر تحذف؟ (في الإصدارات الحديثة من بايثون 3.7+)", options: ["أول عنصر تم إضافته", "آخر عنصر تم إضافته", "عنصر عشوائي", "تحذف كل العناصر"], ans: 1 },
+            { q: "كيف نقوم بعمل (Tuple Destruct) وتجاهل قيمة معينة باستخدام (_)؟", code: "a = (1, 2, 3)\nx, _, z = a\nprint(z)", options: ["1", "2", "3", "Error"], ans: 2 },
+            { q: "ما وظيفة الدالة dict.fromkeys()؟", options: ["جلب مفاتيح قاموس", "إنشاء قاموس جديد من تسلسل مفاتيح وإعطائهم نفس القيمة", "مسح قيم القاموس", "تحديث قيم مفاتيح القاموس"], ans: 1 },
+            { q: "ما هي نتيجة العملية: -10 + 20؟", options: ["-30", "30", "10", "-10"], ans: 2 },
+            { q: "ما هي نتيجة 119 // 20 (Floor Division)؟", options: ["5.95", "6", "5", "0"], ans: 2 },
+            { q: "عند استخدام copy() لنسخ قائمة (Shallow Copy)، وتعديل القائمة الأصلية، ماذا يحدث للنسخة؟", code: "b = [1, 2, 3]\nc = b.copy()\nb.append(4)", options: ["يُضاف 4 إلى القائمتين b و c", "يُضاف 4 إلى b فقط وتظل c كما هي", "تحدث مشكلة في الذاكرة", "تصبح c فارغة"], ans: 1 }
+        ];
+
+        let currentQuestion = 0;
+        let userAnswers = new Array(50).fill(null);
+        let studentName = "";
+        let timeLeft = 50 * 60; 
+        let timerInterval;
+        let pyodideLoaded = false;
+        let pyodide = null;
+
+        async function initPyodide() {
+            try {
+                pyodide = await loadPyodide();
+                pyodideLoaded = true;
+                document.getElementById('python-output').innerText = "بيئة بايثون جاهزة الآن.";
+            } catch (err) {
+                document.getElementById('python-output').innerText = "خطأ في الاتصال. راجع الإنترنت.";
+            }
+        }
+
+        function startLogin() {
+            const nameInput = document.getElementById('student-name').value.trim();
+            const passInput = document.getElementById('exam-password').value;
+            const errorMsg = document.getElementById('login-error');
+
+            if (nameInput === "" || passInput !== "python123") {
+                errorMsg.classList.remove('hidden');
+                return;
+            }
+
+            studentName = nameInput;
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('waiting-screen').classList.remove('hidden');
+            
+            initPyodide(); 
+            simulateWaiting();
+        }
+
+        function simulateWaiting() {
+            let count = 1;
+            const countDisplay = document.getElementById('student-count');
+            const waitInterval = setInterval(() => {
+                count += Math.floor(Math.random() * 5) + 1;
+                if (count >= 50) {
+                    count = 50;
+                    countDisplay.innerText = count;
+                    clearInterval(waitInterval);
+                    setTimeout(() => {
+                        document.getElementById('waiting-screen').classList.add('hidden');
+                        document.getElementById('exam-screen').classList.remove('hidden');
+                        loadQuestion();
+                        startTimer();
+                    }, 1000);
+                } else {
+                    countDisplay.innerText = count;
+                }
+            }, 800);
+        }
+
+        function loadQuestion() {
+            const q = questions[currentQuestion];
+            document.getElementById('q-text').innerText = `${currentQuestion + 1}. ${q.q}`;
+            document.getElementById('question-counter').innerText = `السؤال ${currentQuestion + 1} / 50`;
+
+            const codeSection = document.getElementById('code-section');
+            const codeBlock = document.getElementById('q-code-block');
+            if (q.code) {
+                codeSection.classList.remove('hidden');
+                codeBlock.innerHTML = formatPythonCode(q.code);
+            } else {
+                codeSection.classList.add('hidden');
+            }
+
+            const optionsContainer = document.getElementById('options-container');
+            optionsContainer.innerHTML = '';
+            q.options.forEach((opt, index) => {
+                const isChecked = userAnswers[currentQuestion] === index ? 'checked' : '';
+                optionsContainer.innerHTML += `
+                    <label class="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition">
+                        <input type="radio" name="option" value="${index}" ${isChecked} onclick="saveAnswer(${index})" class="w-4 h-4 text-blue-600">
+                        <span class="text-lg text-gray-700">${opt}</span>
+                    </label>
+                `;
+            });
+        }
+
+        function saveAnswer(index) {
+            userAnswers[currentQuestion] = index;
+        }
+
+        function nextQuestion() {
+            if (currentQuestion < questions.length - 1) {
+                currentQuestion++;
+                loadQuestion();
+            }
+        }
+
+        function prevQuestion() {
+            if (currentQuestion > 0) {
+                currentQuestion--;
+                loadQuestion();
+            }
+        }
+
+        function startTimer() {
+            timerInterval = setInterval(() => {
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    submitExam();
+                    return;
+                }
+                timeLeft--;
+                let minutes = Math.floor(timeLeft / 60);
+                let seconds = timeLeft % 60;
+                document.getElementById('timer-display').innerText = 
+                    `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }, 1000);
+        }
+
+        function confirmSubmit() {
+            if (confirm("هل أنت متأكد من إنهاء الاختبار وتسليم الدرجة؟")) {
+                submitExam();
+            }
+        }
+
+        // دالة احتساب النتيجة وإرسالها للملف المركزي
+        function submitExam() {
+            clearInterval(timerInterval);
+            
+            // حساب الدرجة النهائية
+            let score = 0;
+            for (let i = 0; i < questions.length; i++) {
+                if (userAnswers[i] === questions[i].ans) {
+                    score++;
+                }
+            }
+
+            // إرسال البيانات عبر دالة الـ Web App التي صنعناها في جوجل
+            submitExamResult(studentName, score);
+
+            // إظهار شاشة النهاية للممتحن
+            document.getElementById('exam-screen').classList.add('hidden');
+            document.getElementById('finish-modal').classList.remove('hidden');
+        }
+
+        // --- دالة إرسال الدرجة للملف المركزي (جوجل شيت) ---
+        function submitExamResult(name, finalScore) {
+            const webAppUrl = "https://script.google.com/macros/s/AKfycbz5DxW0PzkuHy3K1FFE1O1zHsjoyvOxy6AEskCAiWlu7hGP5Z2fx4PZzrFASr4AQebFw/exec"
+
+            const payload = {
+                name: name,
+                score: finalScore
+            };
+
+            fetch(webAppUrl, {
+                method: "POST",
+                mode: "no-cors",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(response => {
+                console.log("تم إرسال الدرجة بنجاح إلى الملف المركزي!");
+            })
+            .catch(error => {
+                console.error("حدث خطأ أثناء إرسال الدرجة:", error);
+            });
+        }
+
+        function openEditor() {
+            document.getElementById('editor-modal').classList.remove('hidden');
+        }
+
+        function closeEditor() {
+            document.getElementById('editor-modal').classList.add('hidden');
+        }
+
+        async function runCode() {
+            if (!pyodideLoaded) {
+                alert("بيئة بايثون لم تكتمل في التحميل بعد.");
+                return;
+            }
+            const code = document.getElementById('python-code').value;
+            const outputElement = document.getElementById('python-output');
+            outputElement.innerText = "جاري التنفيذ...";
+            
+            try {
+                pyodide.runPython(`
+import sys
+import io
+sys.stdout = io.StringIO()
+                `);
+                pyodide.runPython(code);
+                let stdout = pyodide.runPython("sys.stdout.getvalue()");
+                outputElement.innerText = stdout || "تم التنفيذ بنجاح (بدون مخرجات مطبوعة).";
+            } catch (err) {
+                outputElement.innerText = err;
+            }
+        }
+    </script>
+</body>
+</html>
